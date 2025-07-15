@@ -103,7 +103,6 @@
             let constructedPrompt = userPrompt;
 
             if (linesToEditInfo && linesToEditInfo.lines.length > 0) {
-              // Editing existing code - instruct to return the whole modified code
               systemInstruction = `あなたは優秀なAIコーディングアシスタントです。ユーザーは既存のコードの特定部分の編集を指示します。
 現在のコード全体と編集指示、注目すべき行番号を提示します。
 これらを考慮し、指示を反映した上で、修正後の完全なコード全体を返してください。
@@ -111,7 +110,6 @@
               
               constructedPrompt = `ユーザーは、現在エディタにある以下のコード全体について、特に（${linesToEditInfo.lines.join(', ')}行目 付近）に対する編集を希望しています。\n\n編集指示は「${userPrompt}」です。\n\n現在のコード全体は次のとおりです:\n\`\`\`\n${currentFullCode}\n\`\`\`\n\nこの編集指示を考慮し、上記のコード全体を修正した最終的な完全なコードのみを返してください。`;
             } else {
-              // New code generation - instruct to return just the code
               constructedPrompt = `以下の指示に基づいてコードを生成してください: 「${userPrompt}」\n生成されたコードそのものだけを返してください。`;
             }
 
@@ -165,13 +163,12 @@
             if (!userInput.trim()) return;
 
             const newUserMessage = { sender: 'user', text: userInput };
-            // Pass a copy of chatMessages to avoid issues with async updates
             const currentMessagesForApi = [...chatMessages, newUserMessage];
             setChatMessages(currentMessagesForApi);
 
 
             const currentEditingContext = editingContext;
-            const currentCodeForApi = code; // Pass current code state
+            const currentCodeForApi = code;
             setUserInput('');
 
             const geminiResponseText = await callGeminiApi(newUserMessage.text, currentMessagesForApi, currentCodeForApi, currentEditingContext);
@@ -189,7 +186,6 @@
 
           const handleApplyCode = (rawGeminiResponse, messageEditingContextSnapshot) => {
             setError(null);
-            // Gemini is now expected to return the full code for both new and edited code scenarios.
             setCode(rawGeminiResponse); 
 
             if (messageEditingContextSnapshot && messageEditingContextSnapshot.lines.length > 0) {
@@ -237,7 +233,7 @@
                 <button
                   onClick={() => { setCurrentScreen('editor'); }}
                   className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out flex items-center"
-                  disabled={!code && currentScreen === 'chat'} // Disable if no code and on chat screen
+                  disabled={!code && currentScreen === 'chat'}
                   title={!code && currentScreen === 'chat' ? "反映するコードがありません" : "エディタ画面へ"}
                 >
                   エディタ <ChevronRight size={20} className="ml-1" />
@@ -319,7 +315,6 @@
                    <button
                     onClick={() => {
                         setCurrentScreen('chat');
-                        setChatMessages(prev => [...prev, {sender: 'system', text: 'チャット画面に戻りました。'}]);
                         setError(null);
                     }}
                     className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out flex items-center"
