@@ -8,6 +8,7 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="./config.js"></script>
 
     <style>
         body {
@@ -35,6 +36,8 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #718096; /* gray-500 */
         }
+        /* contentEditableな要素のフォーカス時のアウトラインを消す (Tailwindのfocus:outline-noneで代替) */
+        /* [contenteditable]:focus { outline: none; } */
     </style>
 </head>
 <body>
@@ -87,7 +90,6 @@
           const callGeminiApi = async (userPrompt, currentChatHistory, currentFullCode, linesToEditInfo) => {
             setIsLoading(true);
             setError(null);
-            // !!! IMPORTANT: REPLACE "" WITH YOUR ACTUAL GEMINI API KEY !!!
             const apiKey = typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : "";
 
             if (!apiKey) {
@@ -137,9 +139,9 @@
                 console.error('Gemini API Error:', errorData);
                 throw new Error(`APIエラー: ${errorData.error?.message || response.statusText} (ステータス: ${response.status})`);
               }
-
+              
               const result = await response.json();
-
+              
               if (result.candidates && result.candidates.length > 0 &&
                   result.candidates[0].content && result.candidates[0].content.parts &&
                   result.candidates[0].content.parts.length > 0) {
@@ -168,7 +170,7 @@
 
 
             const currentEditingContext = editingContext;
-            const currentCodeForApi = code;
+            const currentCodeForApi = code; 
             setUserInput('');
 
             const geminiResponseText = await callGeminiApi(newUserMessage.text, currentMessagesForApi, currentCodeForApi, currentEditingContext);
@@ -198,6 +200,28 @@
             setCurrentScreen('editor');
             setSelectedLines([]);
           };
+          
+          const handleLineChange = (event, editedLineNumber) => {
+            const newContentForEditedLine = event.currentTarget.textContent;
+            const currentCodeLines = code.split('\n');
+
+            if (editedLineNumber - 1 >= 0 && editedLineNumber - 1 < currentCodeLines.length) {
+              // ユーザーがペーストなどで複数行を入力した場合も考慮
+              const pastedOrEditedLines = newContentForEditedLine.split('\n');
+              
+              // 元の1行を、編集/ペーストされた行群で置き換える
+              currentCodeLines.splice(editedLineNumber - 1, 1, ...pastedOrEditedLines);
+              
+              const newCode = currentCodeLines.join('\n');
+
+              if (code !== newCode) {
+                setCode(newCode);
+                // コードが直接変更されたため、選択状態はクリアする
+                setSelectedLines([]); 
+              }
+            }
+          };
+
 
           const handleEditSelectedLines = () => {
             if (selectedLines.length === 0) {
@@ -347,19 +371,30 @@
                   const lineNumber = index + 1;
                   const isSelected = selectedLines.includes(lineNumber);
                   return (
-                    <div key={lineNumber} className={`flex items-center p-1.5 rounded hover:bg-gray-600/70 ${isSelected ? 'bg-blue-900/60' : ''} transition-colors duration-100`}>
+                    <div key={`line-container-${lineNumber}`} // Changed key to be more unique for the container
+                         className={`flex items-center p-0.5 rounded hover:bg-gray-600/70 ${isSelected ? 'bg-blue-900/60' : ''} transition-colors duration-100 group`}>
                       <div className="mr-3 select-none cursor-pointer" onClick={() => toggleLineSelection(lineNumber)}>
-                        {isSelected ? <CheckSquare size={20} className="text-blue-400" /> : <Square size={20} className="text-gray-500 hover:text-gray-400" />}
+                        {isSelected ? <CheckSquare size={20} className="text-blue-400" /> : <Square size={20} className="text-gray-500 group-hover:text-gray-400" />}
                       </div>
                       <span className="text-gray-400 mr-3 w-8 text-right select-none">{lineNumber}.</span>
-                      <pre className="whitespace-pre-wrap flex-grow text-gray-100 font-mono text-sm">{line || ' '}</pre>
+                      {/* Editable div for the line content */}
+                      <div
+                        key={`editable-line-${lineNumber}`} // Key for the editable element itself
+                        contentEditable={true}
+                        suppressContentEditableWarning={true} // Suppress React warning for contentEditable
+                        onBlur={(e) => handleLineChange(e, lineNumber)}
+                        className="whitespace-pre-wrap flex-grow text-gray-100 font-mono text-sm focus:outline-none focus:bg-gray-700/80 px-1 py-0.5 rounded"
+                        style={{ minHeight: '1.5em' }} // Ensure empty lines are visible and editable
+                      >
+                        {line}
+                      </div>
                     </div>
                   );
                 })}
                 {code.length === 0 && !error && (
                     <div className="text-center text-gray-400 mt-10">
                         <p className="text-lg">エディタは空です。</p>
-                        <p>チャット画面でコードを生成し、「コードを反映」ボタンを押してください。</p>
+                        <p>チャット画面でコードを生成するか、直接入力してください。</p>
                     </div>
                 )}
               </div>
