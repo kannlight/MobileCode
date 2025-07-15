@@ -10,19 +10,17 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        /* 基本的なフォント設定など */
         body {
-            font-family: sans-serif; /* Tailwindが設定しますが念のため */
+            font-family: sans-serif;
             margin: 0;
             height: 100vh;
             width: 100vw;
-            overflow: hidden; /* Appコンポーネントのスタイルに合わせる */
+            overflow: hidden;
         }
         #root {
             height: 100%;
             width: 100%;
         }
-        /* スクロールバーのスタイル（オプション）*/
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -43,7 +41,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Simple replacements for Lucide icons (using emojis or text)
+        // Simple replacements for Lucide icons
         const ChevronRight = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>&gt;</span>;
         const MessageSquare = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>💬</span>;
         const Edit3 = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>✏️</span>;
@@ -54,23 +52,11 @@
         const Bot = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>🤖</span>;
         const User = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>👤</span>;
         const AlertTriangle = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>⚠️</span>;
-        // PlusCircle, Trash2, Settings are not directly used in the final UI logic based on your provided React code.
 
-        // --- React Component Code (from your provided script) ---
-        // Renamed React imports to avoid conflict with global React from CDN
         const { useState, useEffect, useRef } = React;
 
-        // Firebase imports are commented out as they are not used in local setup without config
-        // import { initializeApp } from 'firebase/app';
-        // import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-        // import { getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
-
-        // const firebaseConfig = {};
-        // const appId = 'default-app-id';
-        // const initialAuthToken = null;
-
         const App = () => {
-          const [currentScreen, setCurrentScreen] = useState('chat'); // 'chat' or 'editor'
+          const [currentScreen, setCurrentScreen] = useState('chat');
           const [chatMessages, setChatMessages] = useState([
             { sender: 'gemini', text: 'こんにちは！どのようなコードを作成しますか？または、既存のコードを編集しますか？', isCodeSuggestion: false }
           ]);
@@ -110,27 +96,32 @@
                 return null;
             }
 
-            const systemInstruction = `あなたは優秀なAIコーディングアシスタントです。ユーザーの指示に基づいてコードスニペットを生成または変更します。
-指示された場合、特に既存のコードの特定行を編集するよう求められた場合は、自身の解説やマークダウンフォーマット（例: \`\`\`）を含めず、要求されたコードブロックの完全な新しいバージョンのみを提供してください。
-生成するコードは、簡潔で、ユーザーの要求に直接応えるものにしてください。`;
+            let systemInstruction = `あなたは優秀なAIコーディングアシスタントです。ユーザーの指示に基づいてコードスニペットを生成または変更します。
+生成するコードは、簡潔で、ユーザーの要求に直接応えるものにしてください。
+自身の解説やマークダウンフォーマット（例: \`\`\`）を含めず、要求されたコードそのものだけを返してください。`;
 
             let constructedPrompt = userPrompt;
+
             if (linesToEditInfo && linesToEditInfo.lines.length > 0) {
-              const originalCodeLines = currentFullCode.split('\n');
-              const selectedCodeSnippets = linesToEditInfo.lines
-                .map(ln => originalCodeLines[ln - 1])
-                .filter(line => typeof line === 'string')
-                .join('\n');
+              // Editing existing code - instruct to return the whole modified code
+              systemInstruction = `あなたは優秀なAIコーディングアシスタントです。ユーザーは既存のコードの特定部分の編集を指示します。
+現在のコード全体と編集指示、注目すべき行番号を提示します。
+これらを考慮し、指示を反映した上で、修正後の完全なコード全体を返してください。
+あなたの解説や追加のテキスト、マークダウンフォーマット（例: \`\`\`）は一切不要です。必ずコード全体を返してください。`;
               
-              constructedPrompt = `ユーザーは現在以下のコードの特定行（${linesToEditInfo.lines.join(', ')}行目）の編集を希望しています:\n\`\`\`\n${selectedCodeSnippets}\n\`\`\`\n\n編集指示は次の通りです: "${userPrompt}"\n\n上記の指示に基づき、これらの行を修正した新しいコードブロックのみを提供してください。あなたの解説や追加のテキストは不要です。`;
+              constructedPrompt = `ユーザーは、現在エディタにある以下のコード全体について、特に（${linesToEditInfo.lines.join(', ')}行目 付近）に対する編集を希望しています。\n\n編集指示は「${userPrompt}」です。\n\n現在のコード全体は次のとおりです:\n\`\`\`\n${currentFullCode}\n\`\`\`\n\nこの編集指示を考慮し、上記のコード全体を修正した最終的な完全なコードのみを返してください。`;
+            } else {
+              // New code generation - instruct to return just the code
+              constructedPrompt = `以下の指示に基づいてコードを生成してください: 「${userPrompt}」\n生成されたコードそのものだけを返してください。`;
             }
+
 
             const apiChatHistory = transformChatMessagesForApi(currentChatHistory);
 
             const payload = {
               contents: [
                 { role: "user", parts: [{ text: `System Instruction: ${systemInstruction}` }] },
-                { role: "model", parts: [{ text: "はい、承知いたしました。コーディングのお手伝いをします。" }] },
+                { role: "model", parts: [{ text: "はい、承知いたしました。指示に従いコードを返します。" }] },
                 ...apiChatHistory,
                 { role: "user", parts: [{ text: constructedPrompt }] }
               ],
@@ -174,13 +165,16 @@
             if (!userInput.trim()) return;
 
             const newUserMessage = { sender: 'user', text: userInput };
-            const updatedChatMessages = [...chatMessages, newUserMessage];
-            setChatMessages(updatedChatMessages);
+            // Pass a copy of chatMessages to avoid issues with async updates
+            const currentMessagesForApi = [...chatMessages, newUserMessage];
+            setChatMessages(currentMessagesForApi);
+
 
             const currentEditingContext = editingContext;
+            const currentCodeForApi = code; // Pass current code state
             setUserInput('');
 
-            const geminiResponseText = await callGeminiApi(newUserMessage.text, updatedChatMessages, code, currentEditingContext);
+            const geminiResponseText = await callGeminiApi(newUserMessage.text, currentMessagesForApi, currentCodeForApi, currentEditingContext);
 
             if (geminiResponseText !== null) {
               const newGeminiMessage = {
@@ -195,33 +189,16 @@
 
           const handleApplyCode = (rawGeminiResponse, messageEditingContextSnapshot) => {
             setError(null);
-            let codeToApply = rawGeminiResponse;
+            // Gemini is now expected to return the full code for both new and edited code scenarios.
+            setCode(rawGeminiResponse); 
 
             if (messageEditingContextSnapshot && messageEditingContextSnapshot.lines.length > 0) {
-                const currentCodeLines = code.split('\n');
-                const linesToEditNumbers = messageEditingContextSnapshot.lines.sort((a, b) => a - b);
-                
-                const firstLineIndex = linesToEditNumbers[0] - 1;
-                const lastLineIndex = linesToEditNumbers[linesToEditNumbers.length - 1] - 1;
-                const linesToRemove = (lastLineIndex - firstLineIndex + 1);
-
-                const newCodeBlockLines = codeToApply.split('\n');
-                
-                if (firstLineIndex < 0 || firstLineIndex > currentCodeLines.length && !(firstLineIndex === 0 && currentCodeLines.length === 0 && currentCodeLines[0] === '')) { // Allow insertion into empty editor
-                    setError(`エラー: 編集開始行(${firstLineIndex + 1})が無効です。 (コード行数: ${currentCodeLines.length})`);
-                    return;
-                }
-                
-                currentCodeLines.splice(firstLineIndex, linesToRemove, ...newCodeBlockLines);
-                setCode(currentCodeLines.join('\n'));
-
-                setChatMessages(prev => [...prev, {sender: 'system', text: `${messageEditingContextSnapshot.lines.join(', ')}行目の編集が適用されました。`}]);
+                setChatMessages(prev => [...prev, {sender: 'system', text: `編集指示に基づき、コード全体が更新されました。(注目行: ${messageEditingContextSnapshot.lines.join(', ')})`}]);
             } else {
-                setCode(codeToApply);
-                setChatMessages(prev => [...prev, {sender: 'system', text: 'コードがエディタに反映されました。'}]);
+                setChatMessages(prev => [...prev, {sender: 'system', text: '新しいコードがエディタに反映されました。'}]);
             }
             
-            setEditingContext(null);
+            setEditingContext(null); 
             setCurrentScreen('editor');
             setSelectedLines([]);
           };
@@ -237,7 +214,7 @@
             setUserInput(''); 
             setChatMessages(prev => [
                 ...prev,
-                {sender: 'system', text: `${sortedSelectedLines.join(', ')}行目を編集します。編集内容を指示してください。`}
+                {sender: 'system', text: `${sortedSelectedLines.join(', ')}行目付近の編集について指示してください。Geminiはコード全体を修正します。`}
             ]);
             setError(null);
           };
@@ -260,7 +237,7 @@
                 <button
                   onClick={() => { setCurrentScreen('editor'); }}
                   className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-150 ease-in-out flex items-center"
-                  disabled={!code && currentScreen === 'chat'}
+                  disabled={!code && currentScreen === 'chat'} // Disable if no code and on chat screen
                   title={!code && currentScreen === 'chat' ? "反映するコードがありません" : "エディタ画面へ"}
                 >
                   エディタ <ChevronRight size={20} className="ml-1" />
@@ -283,7 +260,8 @@
                       msg.sender === 'gemini' ? 'bg-gray-600 text-gray-100 rounded-bl-none' :
                       'bg-yellow-600/30 text-yellow-100 text-sm italic text-center w-full py-2 rounded-md'
                     }`}>
-                      {msg.sender === 'gemini' && <Bot size={18} className="inline mr-2 mb-1 text-blue-300" />}
+                      {msg.sender === 'gemini' && !msg.isCodeSuggestion && <Bot size={18} className="inline mr-2 mb-1 text-blue-300" />}
+                      {msg.sender === 'gemini' && msg.isCodeSuggestion && <Bot size={18} className="inline mr-2 mb-1 text-green-400" />}
                       {msg.sender === 'user' && <User size={18} className="inline mr-2 mb-1 text-blue-300" />}
                       {typeof msg.text === 'string' && msg.text.split('\n').map((line, i) => (
                         <span key={i} className="block whitespace-pre-wrap">{line}</span>
@@ -314,7 +292,7 @@
                     value={userInput}
                     onChange={(e) => setUserInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSendMessage()}
-                    placeholder={editingContext ? `${editingContext.lines.join(', ')}行目の編集内容を入力...` : "Geminiにメッセージを送信..."}
+                    placeholder={editingContext ? `${editingContext.lines.join(', ')}行目付近の編集内容... (コード全体が更新されます)` : "Geminiにメッセージを送信..."}
                     className="flex-grow p-3 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-inner"
                     disabled={isLoading}
                   />
@@ -433,7 +411,6 @@
           );
         };
 
-        // Render the App component to the #root div
         ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
