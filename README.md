@@ -36,8 +36,6 @@
 > `backend.js` は SSH ブリッジ機能を提供する Node.js サーバーです。  
 > フロントエンドやモバイルアプリからの SSH 操作リクエストを受け付けて処理します。
 
-
-
 ---
 
 ## クライアント（Android / Capacitor）構成
@@ -46,9 +44,9 @@
 
 ```
 client/
-├── android/                 # Android Studio プロジェクト
+├── android/                 # Android Studio プロジェクト（Capacitor により生成）
 ├── www/                    # WebView に読み込まれる Web ビルド成果物
-├── capacitor.config.json   # Capacitor 設定ファイル
+├── capacitor.config.ts     # Capacitor 設定ファイル（.json の場合もあり）
 ├── package.json            # Node.js 依存定義
 └── package-lock.json       # 依存バージョン固定ファイル
 ```
@@ -77,21 +75,30 @@ client/
    npm install
    ```
 
-3. Capacitor を同期：
+3. 必要に応じて Web フロントエンドをビルド（Vue/React 等を使用している場合）：
+
+   ```bash
+   npm run build
+   ```
+
+4. Capacitor 用にビルド成果物をコピー：
+
+   ```bash
+   npx cap copy android
+   ```
+
+5. Android プロジェクトを同期：
 
    ```bash
    npx cap sync android
    ```
 
-4. Android Studio を起動し、以下のディレクトリを開く：
+6. Android Studio を起動：
 
+   ```bash
+   npx cap open android
    ```
-   client/android/
-   ```
 
-5. 実機またはエミュレータを使って Run ▶ ボタンでビルド・起動
+7. 実機またはエミュレータを使って Run ▶ ボタンでビルド・起動
 
----
-
-> `client/www/` はビルド済みの Web リソースを含みます。通常はそのままで OK ですが、フロントエンドを修正する場合は再ビルド後に `npx cap copy` を実行してください。
-
+> `client/www/` は Web リソースの出力先です。フロントエンドを修正した場合は `npm run build` の後に `npx cap copy` を実行してください。
