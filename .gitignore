@@ -1,2 +1,15 @@
+# ローカル設定ファイル
 config.js
 .DS_Store
+
+# サーバー依存（Node.js）
+server/node_modules/
+
+# クライアント依存（Node.js + Capacitor）
+client/node_modules/
+
+# Android Studio 関連のキャッシュ・ローカルファイル
+client/android/.gradle/
+client/android/.idea/
+client/android/local.properties
+client/android/app/build/

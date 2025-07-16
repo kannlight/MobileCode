@@ -1,0 +1,6 @@
+{
+  "appId": "com.example.codeeditor",
+  "appName": "CodeEditorAI",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}

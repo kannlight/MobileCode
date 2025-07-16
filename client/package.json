@@ -1,0 +1,9 @@
+{
+  "name": "code-editor-app",
+  "version": "1.0.0",
+  "main": "index.html",
+  "scripts": {},
+  "dependencies": {
+    "@capacitor/android": "^7.4.2"
+  }
+}
