@@ -55,7 +55,7 @@
         const Bot = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>🤖</span>;
         const User = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>👤</span>;
         const AlertTriangle = ({ size, className }) => <span className={className} style={{ fontSize: size ? `${size}px` : 'inherit' }}>⚠️</span>;
-
+        const BACKENDURL  = "http://192.168.11.26:3000"
         // SSHファイルマネージャーアイコン
         const Server = ({ size = 24, className = "" }) => (
           <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -205,7 +205,7 @@
             try {
               // バックエンドサービスが特定のURLで実行されていると仮定します（例: http://localhost:3000）
               // Capacitorアプリケーションでは、CORSを設定し、デバイスの実際のIPまたはドメインを使用する必要がある場合があります
-              const backendUrl = 'http://localhost:3000'; // バックエンドサービスのURLに置き換えてください
+              const backendUrl = BACKENDURL; // バックエンドサービスのURLに置き換えてください
               const response = await fetch(`${backendUrl}${endpoint}`, {
                 method: 'POST',
                 headers: {
@@ -348,7 +348,7 @@
             setIsCommandExecuting(true);
             setCommandOutput(prev => prev + `\n> ${command}\n`); // 入力コマンドを表示
             try {
-                const backendUrl = 'http://localhost:3000'; // バック端サービスのURLに置き換えてください
+                const backendUrl = BACKENDURL; // バック端サービスのURLに置き換えてください
                 const response = await fetch(`${backendUrl}/execute`, {
                     method: 'POST',
                     headers: {
