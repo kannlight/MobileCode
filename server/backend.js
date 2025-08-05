@@ -181,7 +181,7 @@ app.post('/upload', (req, res) => {
             res.status(500).json({ success: false, message: `ファイルのアップロードに失敗しました: ${err.message}` });
         });
 
-        writeStream.on('finish', () => {
+        writeStream.on('close', () => {
             console.log(`Successfully uploaded to ${path}`);
             res.json({ success: true, message: 'ファイルが正常に更新されました。' });
         });
