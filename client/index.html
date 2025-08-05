@@ -159,12 +159,15 @@
                 { sender: 'gemini', text: 'こんにちは！どのようなコードを作成しますか？', isCodeSuggestion: false }
             ]);
             const [code, setCode] = useState('');
+            const [originalCode, setOriginalCode] = useState('');
             const [editingFilePath, setEditingFilePath] = useState(null);
             const [selectedLines, setSelectedLines] = useState([]);
             const [userInput, setUserInput] = useState('');
             const [editingContext, setEditingContext] = useState(null);
-            const [isLoading, setIsLoading] = useState(false);
+            const [isGeminiLoading, setIsGeminiLoading] = useState(false);
+            const [isBackendLoading, setIsBackendLoading] = useState(false);
             const [error, setError] = useState(null);
+            const [notification, setNotification] = useState(null);
             const chatEndRef = useRef(null);
 
             const [connectionInfo, setConnectionInfo] = useState({
@@ -181,6 +184,13 @@
             const [newCustomCommandName, setNewCustomCommandName] = useState('');
             const [newCustomCommandValue, setNewCustomCommandValue] = useState('');
             const commandOutputRef = useRef(null);
+
+            const showNotification = (message, isError = false) => {
+                setNotification({ message, isError });
+                setTimeout(() => {
+                    setNotification(null);
+                }, 3000); // 3秒後に通知を消す
+            };
 
             useEffect(() => {
                 if (chatEndRef.current) {
@@ -206,7 +216,7 @@
             }, [commandOutput]);
 
             const callBackendApi = async (endpoint, data) => {
-                setIsLoading(true);
+                setIsBackendLoading(true);
                 setError(null);
                 try {
                     const backendUrl = BACKENDURL;
@@ -229,7 +239,7 @@
                     setError(e.message || 'バックエンドサービスへの接続に失敗しました。');
                     return null;
                 } finally {
-                    setIsLoading(false);
+                    setIsBackendLoading(false);
                 }
             };
             
@@ -254,6 +264,7 @@
                 setRemoteFiles([]);
                 setCurrentRemotePath('/');
                 setCode('');
+                setOriginalCode('');
                 setEditingFilePath(null);
                 setActiveTab('chat'); // ローカルモードのデフォルトはチャット
                 setError(null);
@@ -283,6 +294,7 @@
                     try {
                         const decodedContent = atob(result.fileContent);
                         setCode(decodedContent);
+                        setOriginalCode(decodedContent);
                         setEditingFilePath(filePath);
                         setShowEditorTab(true); // エディタタブを表示
                         setActiveTab('editor'); // エディタタブに切り替え
@@ -295,8 +307,7 @@
             };
             
             const handleSaveAndUpdate = async () => {
-                if (!editingFilePath) {
-                    setError("更新対象のファイルが指定されていません。");
+                if (!editingFilePath || code === originalCode) {
                     return;
                 }
                 const contentToUpload = btoa(unescape(encodeURIComponent(code)));
@@ -307,6 +318,7 @@
                 });
 
                 if (result && result.success) {
+                    setOriginalCode(code);
                     setChatMessages(prev => [...prev, {sender: 'system', text: `ファイル (${editingFilePath}) が正常に更新されました。`}]);
                 }
             };
@@ -346,13 +358,13 @@
             };
 
             const callGeminiApi = async (userPrompt, currentChatHistory, currentFullCode, linesToEditInfo) => {
-              setIsLoading(true);
+              setIsGeminiLoading(true);
               setError(null);
-              const apiKey = typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : "";
+              const apiKey = typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : "AIzaSyC4IdbcGSRiMv-D1jDOzH4cXtE2ouoxzV8";
 
               if (!apiKey) {
                   setError("Gemini APIキーが設定されていません。");
-                  setIsLoading(false);
+                  setIsGeminiLoading(false);
                   return null;
               }
 
@@ -399,7 +411,7 @@
                 setError(e.message || 'Gemini APIの呼び出し中にエラーが発生しました。');
                 return null;
               } finally {
-                setIsLoading(false);
+                setIsGeminiLoading(false);
               }
             };
 
@@ -463,6 +475,19 @@
                 setCustomCommands(updatedCommands);
                 localStorage.setItem('customSshCommands', JSON.stringify(updatedCommands));
             };
+
+            const handleCopyToClipboard = () => {
+                if (!code) return;
+
+                navigator.clipboard.writeText(code)
+                    .then(() => {
+                        showNotification("クリップボードにコピーしました！");
+                    })
+                    .catch(err => {
+                        console.error('クリップボードへのコピーに失敗:', err);
+                        showNotification("コピーに失敗しました。", true);
+                    });
+            };
             
             // タブの定義
             const allTabs = [
@@ -477,7 +502,10 @@
                 ? [allTabs[0], allTabs[1], allTabs[2], allTabs[3]] // Remote: ファイル, チャット, エディタ, コマンド
                 : [allTabs[1], allTabs[2]]; // Local: チャット, エディタ
 
-            const renderEditor = () => (
+            const renderEditor = () => {
+              const isModified = editingFilePath && code !== originalCode;
+
+              return(
                 <div className="flex flex-col h-full bg-gray-900 text-white">
                     <div className="flex-grow p-4 overflow-auto bg-gray-800">
                         {code.split('\n').map((line, index) => {
@@ -505,17 +533,24 @@
                             <Edit3 size={18} className="mr-1.5" /> 選択行を編集
                         </button>
                         {isRemote ? (
-                            <button onClick={handleSaveAndUpdate} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow flex items-center" disabled={!editingFilePath || isLoading}>
+                            <button 
+                                onClick={handleSaveAndUpdate} 
+                                className={`font-semibold py-2 px-4 rounded-lg shadow flex items-center transition-all ${
+                                    isModified ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                }`}
+                                disabled={!isModified || isBackendLoading || isGeminiLoading}
+                            >
                                 <Upload size={18} className="mr-1.5" /> 保存&更新
                             </button>
                         ) : (
-                             <button onClick={() => navigator.clipboard.writeText(code)} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow flex items-center" disabled={!code}>
+                            <button onClick={handleCopyToClipboard} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow flex items-center" disabled={!code}>
                                 <Save size={18} className="mr-1.5" /> クリップボードにコピー
                             </button>
                         )}
                     </footer>
                 </div>
-            );
+              );
+            }
             
             const renderChat = () => (
                 <div className="flex flex-col h-full bg-gray-800 text-white">
@@ -538,14 +573,14 @@
                             {msg.sender === 'user' && <div className="w-8 h-8 rounded-full bg-blue-800 flex items-center justify-center flex-shrink-0"><User size={20} /></div>}
                           </div>
                         ))}
-                        {isLoading && <div className="flex justify-center p-4"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-400"></div><p className="ml-3">Geminiが考え中...</p></div>}
+                        {isGeminiLoading && <div className="flex justify-center p-4"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-400"></div><p className="ml-3">Geminiが考え中...</p></div>}
                         <div ref={chatEndRef} />
                     </div>
                     <div className="p-4 bg-gray-900 border-t border-gray-700">
                       {editingContext && <div className="text-yellow-400 text-sm mb-2 p-2 bg-yellow-900/50 rounded">編集モード: 第{editingContext.lines.join(', ')}行について指示してください。コード全体が更新されます。</div>}
                         <div className="flex items-center space-x-2">
-                            <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSendMessage()} placeholder="Geminiにメッセージを送信..." className="flex-grow p-3 bg-gray-700 text-white rounded-lg" disabled={isLoading} />
-                            <button onClick={handleSendMessage} className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-lg" disabled={isLoading || !userInput.trim()}>
+                            <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && !isGeminiLoading && handleSendMessage()} placeholder="Geminiにメッセージを送信..." className="flex-grow p-3 bg-gray-700 text-white rounded-lg" disabled={isGeminiLoading} />
+                            <button onClick={handleSendMessage} className="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-lg" disabled={isGeminiLoading || !userInput.trim()}>
                                 <Send size={20} />
                             </button>
                         </div>
@@ -562,7 +597,7 @@
                         <span className="flex-grow text-gray-400 text-sm truncate ml-2">パス: {currentRemotePath}</span>
                     </div>
                     <div className="flex-grow overflow-y-auto p-4 space-y-2">
-                        {isLoading ? <div className="text-center text-gray-400">ロード中...</div> : remoteFiles.length === 0 ? <div className="text-center text-gray-500 mt-10">このディレクトリは空です。</div> : (
+                        {isBackendLoading ? <div className="text-center text-gray-400">ロード中...</div> : remoteFiles.length === 0 ? <div className="text-center text-gray-500 mt-10">このディレクトリは空です。</div> : (
                             remoteFiles.map((item, index) => (
                                 <div key={index} className="flex items-center bg-gray-800 p-3 rounded-lg hover:bg-gray-700/80 cursor-pointer" onClick={() => handleFileItemClick(item)}>
                                     {item.type === 'directory' ? <Folder size={24} className="text-blue-400 mr-3 flex-shrink-0" /> : <FileText size={24} className="text-green-400 mr-3 flex-shrink-0" />}
@@ -628,7 +663,7 @@
                         </div>
                         <div className="flex justify-end space-x-4 mt-6">
                              <button onClick={() => { setShowConnectionModal(false); setError(null); }} className="py-2 px-4 bg-gray-600 hover:bg-gray-500 rounded-lg font-semibold">キャンセル</button>
-                             <button onClick={handleConnect} className="py-2 px-6 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold" disabled={isLoading}>{isLoading ? '接続中...' : '接続'}</button>
+                             <button onClick={handleConnect} className="py-2 px-6 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold" disabled={isBackendLoading}>{isBackendLoading ? '接続中...' : '接続'}</button>
                         </div>
                     </div>
                 </div>
@@ -675,6 +710,12 @@
                     </div>
                     
                     {showConnectionModal && renderConnectionModal()}
+
+                    {notification && (
+                        <div className={`fixed bottom-8 right-8 py-3 px-5 rounded-lg shadow-xl text-white text-sm font-semibold transition-opacity duration-300 ${notification.isError ? 'bg-red-600' : 'bg-blue-600'}`}>
+                            {notification.message}
+                        </div>
+                    )}
                 </div>
             );
         };
