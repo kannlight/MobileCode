@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const { Client } = require('ssh2'); // ssh2 ライブラリをインポート
+const fs = require('fs'); // fsモジュールを追加
 
 const app = express();
 const PORT = 3000; // バックエンドサーバーがリッスンするポート
@@ -15,6 +16,20 @@ app.use(bodyParser.json({ limit: '50mb' }));
 // アクティブなSSH接続と設定を保持する変数
 let sshClient = null;
 let sshConfig = null;
+
+// Gemini APIキーを保持する変数
+let GEMINI_API_KEY = null;
+
+// 設定ファイルからAPIキーを読み込む
+try {
+    const configData = fs.readFileSync('./config.json', 'utf8');
+    const config = JSON.parse(configData);
+    GEMINI_API_KEY = config.GEMINI_API_KEY;
+    console.log('Successfully loaded Gemini API Key from config.json');
+} catch (err) {
+    console.error('Error loading config.json:', err.message);
+    console.error('Please create a config.json file with your Gemini API key: { "GEMINI_API_KEY": "YOUR_API_KEY" }');
+}
 
 /**
  * SSHクライアントを作成し、サーバーに接続する
@@ -232,6 +247,67 @@ app.post('/delete-multiple', async (req, res) => {
     res.status(allSuccess ? 200 : 207).json({ success: allSuccess, message: 'Deletion process finished.', results });
 });
 
+// [POST] /gemini - Gemini APIとの通信を処理する新しいエンドポイント
+app.post('/gemini', async (req, res) => {
+    if (!GEMINI_API_KEY) {
+        return res.status(500).json({ success: false, message: 'Gemini APIキーが設定されていません。' });
+    }
+
+    const { userPrompt, currentChatHistory, currentFullCode, linesToEditInfo } = req.body;
+
+    const transformChatMessagesForApi = (messages) => {
+        return messages
+            .filter(msg => msg.sender === 'user' || msg.sender === 'gemini')
+            .map(msg => ({
+                role: msg.sender === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.text }],
+            }));
+    };
+
+    let systemInstruction = `あなたは優秀なAIコーディングアシスタントです。ユーザーの指示に基づいてコードスニペットを生成または変更します。生成するコードは、簡潔で、ユーザーの要求に直接応えるものにしてください。自身の解説やマークダウンフォーマット（例: \`\`\`）を含めず、要求されたコードそのものだけを返してください。`;
+    let constructedPrompt = userPrompt;
+
+    if (linesToEditInfo && linesToEditInfo.lines.length > 0) {
+        systemInstruction = `あなたは優秀なAIコーディングアシスタントです。ユーザーは既存のコードの特定部分の編集を指示します。現在のコード全体と編集指示、注目すべき行番号を提示します。これらを考慮し、指示を反映した上で、修正後の完全なコード全体を返してください。あなたの解説や追加のテキスト、マークダウンフォーマット（例: \`\`\`）は一切不要です。必ずコード全体を返してください。`;
+        constructedPrompt = `ユーザーは、現在エディタにある以下のコード全体について、特に（${linesToEditInfo.lines.join(', ')}行目 付近）に対する編集を希望しています。\n\n編集指示は「${userPrompt}」です。\n\n現在のコード全体は次のとおりです:\n\`\`\`\n${currentFullCode}\n\`\`\`\n\nこの編集指示を考慮し、上記のコード全体を修正した最終的な完全なコードのみを返してください。`;
+    } else {
+        constructedPrompt = `以下の指示に基づいてコードを生成してください: 「${userPrompt}」\n生成されたコードそのものだけを返してください。`;
+    }
+
+    const apiChatHistory = transformChatMessagesForApi(currentChatHistory);
+    const payload = {
+        contents: [
+            { role: "user", parts: [{ text: `System Instruction: ${systemInstruction}` }] },
+            { role: "model", parts: [{ text: "はい、承知いたしました。" }] },
+            ...apiChatHistory,
+            { role: "user", parts: [{ text: constructedPrompt }] }
+        ],
+    };
+
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`APIエラー: ${errorData.error?.message || response.statusText}`);
+        }
+        const result = await response.json();
+        if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts) {
+            let generatedText = result.candidates[0].content.parts[0].text;
+            generatedText = generatedText.replace(/^```[\w]*\n?/gm, '').replace(/```$/gm, '').trim();
+            res.json({ success: true, responseText: generatedText });
+        } else {
+            throw new Error('Geminiからの応答が予期した形式ではありません。');
+        }
+    } catch (e) {
+        console.error('Gemini API Call failed:', e);
+        res.status(500).json({ success: false, message: e.message || 'Gemini APIの呼び出し中にエラーが発生しました。' });
+    }
+});
 
 // サーバーを起動
 app.listen(PORT, '0.0.0.0', () => { // '0.0.0.0' で外部からのアクセスを許可
