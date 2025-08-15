@@ -1,2 +1,4 @@
 ./server/config.json
 .DS_Store
+.firebase/
+pglite-debug.log
