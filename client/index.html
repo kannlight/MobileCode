@@ -162,6 +162,7 @@
             const [originalCode, setOriginalCode] = useState('');
             const [editingFilePath, setEditingFilePath] = useState(null);
             const [selectedLines, setSelectedLines] = useState([]);
+            const [allLinesSelected, setAllLinesSelected] = useState(false); // ★追加★
             const [userInput, setUserInput] = useState('');
             const [editingContext, setEditingContext] = useState(null);
             const [isGeminiLoading, setIsGeminiLoading] = useState(false);
@@ -214,6 +215,15 @@
                     commandOutputRef.current.scrollTop = commandOutputRef.current.scrollHeight;
                 }
             }, [commandOutput]);
+
+            // ★追加★ selectedLinesの状態に合わせてallLinesSelectedを更新
+            useEffect(() => {
+                if (code.split('\n').length > 0 && selectedLines.length === code.split('\n').length) {
+                    setAllLinesSelected(true);
+                } else {
+                    setAllLinesSelected(false);
+                }
+            }, [selectedLines, code]);
 
             const callBackendApi = async (endpoint, data) => {
                 setIsBackendLoading(true);
@@ -432,6 +442,17 @@
                 prev.includes(lineNumber) ? prev.filter(ln => ln !== lineNumber) : [...prev, lineNumber]
               );
             };
+
+            // ★追加★ 全行選択・選択解除トグル関数
+            const toggleAllLinesSelection = () => {
+                const allLineNumbers = code.split('\n').map((_, index) => index + 1);
+                if (allLinesSelected) {
+                    setSelectedLines([]);
+                } else {
+                    setSelectedLines(allLineNumbers);
+                }
+                setAllLinesSelected(!allLinesSelected);
+            };
             
             const handleAddCustomCommand = () => {
               if (newCustomCommandName.trim() && newCustomCommandValue.trim()) {
@@ -500,25 +521,31 @@
                             </div>
                         )}
                     </div>
-                    <footer className="p-3 bg-gray-900 border-t border-gray-700 flex justify-end items-center space-x-3">
-                        <button onClick={handleEditSelectedLines} disabled={selectedLines.length === 0} className={`font-semibold py-2 px-4 rounded-lg shadow flex items-center transition-all ${selectedLines.length > 0 ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>
-                            <Edit3 size={18} className="mr-1.5" /> 選択行を編集
+                    {/* ★修正★ フッター部分の変更 */}
+                    <footer className="p-3 bg-gray-900 border-t border-gray-700 flex justify-between items-center space-x-3">
+                        <button onClick={toggleAllLinesSelection} className="font-semibold py-2 px-4 rounded-lg shadow flex items-center transition-all bg-purple-600 hover:bg-purple-700 text-white">
+                            {allLinesSelected ? '全選択解除' : '全て選択'}
                         </button>
-                        {isRemote ? (
-                            <button 
-                                onClick={handleSaveAndUpdate} 
-                                className={`font-semibold py-2 px-4 rounded-lg shadow flex items-center transition-all ${
-                                    isModified ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                                }`}
-                                disabled={!isModified || isBackendLoading || isGeminiLoading}
-                            >
-                                <Upload size={18} className="mr-1.5" /> 保存&更新
-                            </button>
-                        ) : (
-                            <button onClick={handleCopyToClipboard} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow flex items-center" disabled={!code}>
-                                <Save size={18} className="mr-1.5" /> クリップボードにコピー
-                            </button>
-                        )}
+                        <div className="flex space-x-3">
+                          <button onClick={handleEditSelectedLines} disabled={selectedLines.length === 0} className={`font-semibold py-2 px-4 rounded-lg shadow flex items-center transition-all ${selectedLines.length > 0 ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>
+                              <Edit3 size={18} className="mr-1.5" /> 選択行を編集
+                          </button>
+                          {isRemote ? (
+                              <button 
+                                  onClick={handleSaveAndUpdate} 
+                                  className={`font-semibold py-2 px-4 rounded-lg shadow flex items-center transition-all ${
+                                      isModified ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                  }`}
+                                  disabled={!isModified || isBackendLoading || isGeminiLoading}
+                              >
+                                  <Upload size={18} className="mr-1.5" /> 保存&更新
+                              </button>
+                          ) : (
+                              <button onClick={handleCopyToClipboard} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow flex items-center" disabled={!code}>
+                                  <Save size={18} className="mr-1.5" /> クリップボードにコピー
+                              </button>
+                          )}
+                        </div>
                     </footer>
                 </div>
               );

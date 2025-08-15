@@ -2,25 +2,20 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { Client } = require('ssh2'); // ssh2 ライブラリをインポート
-const fs = require('fs'); // fsモジュールを追加
+const { Client } = require('ssh2');
+const fs = require('fs');
 
 const app = express();
-const PORT = 3000; // バックエンドサーバーがリッスンするポート
+const PORT = 3000;
 
-// CORSを許可（開発用）。本番環境ではフロントエンドのオリジンに限定すべき
 app.use(cors());
-// JSONリクエストボディをパース。ファイルアップロードのためにリミットを増やす
 app.use(bodyParser.json({ limit: '50mb' }));
 
-// アクティブなSSH接続と設定を保持する変数
 let sshClient = null;
 let sshConfig = null;
-
-// Gemini APIキーを保持する変数
 let GEMINI_API_KEY = null;
+let currentDirectory = '/'; // 在服务器端保存当前工作目录
 
-// 設定ファイルからAPIキーを読み込む
 try {
     const configData = fs.readFileSync('./config.json', 'utf8');
     const config = JSON.parse(configData);
@@ -49,41 +44,45 @@ function createSshClient(config) {
         })
         .on('end', () => {
             console.log('SSH Client Ended');
-            sshClient = null; // 接続終了時に変数をクリア
+            sshClient = null;
             sshConfig = null;
+            currentDirectory = '/'; // 连接关闭时重置目录
         })
         .connect(config);
     });
 }
 
 /**
- * SSH経由でコマンドを実行する
- * @param {Client} client - SSHクライアントインスタンス
+ * SSH経由でシェルコマンドを実行する
  * @param {string} cmd - 実行するコマンド
- * @returns {Promise<string>} コマンドの標準出力
+ * @returns {Promise<string>} コマンドの標準出力とエラー出力
  */
-function execCommand(client, cmd) {
+function execShellCommand(cmd) {
     return new Promise((resolve, reject) => {
-        client.exec(cmd, (err, stream) => {
-            if (err) {
-                console.error(`Error executing command "${cmd}":`, err.message);
-                return reject(err);
-            }
-            let stdout = '';
-            let stderr = '';
+        if (!sshClient) {
+            return reject(new Error('SSH Client not active.'));
+        }
 
-            stream.on('close', (code, signal) => {
-                if (code !== 0) {
-                    // 終了コードが0でない場合、エラーとして標準エラー出力を返す
-                    return reject(new Error(stderr.trim() || `Command exited with code ${code}`));
-                }
-                resolve(stdout);
-            });
+        sshClient.exec(cmd, (err, stream) => {
+            if (err) return reject(err);
+
+            let output = '';
+            let errorOutput = '';
+
             stream.on('data', (data) => {
-                stdout += data.toString();
+                output += data.toString();
             });
+
             stream.stderr.on('data', (data) => {
-                stderr += data.toString();
+                errorOutput += data.toString();
+            });
+
+            stream.on('close', (code) => {
+                if (code !== 0) {
+                    reject(new Error(errorOutput || `Command exited with code ${code}`));
+                } else {
+                    resolve(output);
+                }
             });
         });
     });
@@ -92,10 +91,8 @@ function execCommand(client, cmd) {
 // [POST] /connect - SSH接続を確立するAPI
 app.post('/connect', async (req, res) => {
     const { ip, port, username, password } = req.body;
-    // 新しい接続情報を保存
     sshConfig = { host: ip, port: parseInt(port) || 22, username, password };
 
-    // 既存の接続があれば閉じる
     if (sshClient) {
         try {
             sshClient.end();
@@ -107,7 +104,10 @@ app.post('/connect', async (req, res) => {
 
     try {
         sshClient = await createSshClient(sshConfig);
-        console.log(`Successfully connected to ${username}@${ip}:${port}`);
+        // 连接成功后，获取初始工作目录
+        const initialDir = await execShellCommand('pwd');
+        currentDirectory = initialDir.trim();
+        console.log(`Successfully opened client for ${username}@${ip}:${port} at initial directory: ${currentDirectory}`);
         res.json({ success: true, message: 'SSH接続が確立されました' });
     } catch (err) {
         console.error('SSH connection failed:', err.message);
@@ -123,15 +123,17 @@ app.post('/list', async (req, res) => {
     }
 
     try {
-        // -p オプションでディレクトリの末尾に / をつける, -F でタイプ別に記号をつける
-        const lsOutput = await execCommand(sshClient, `ls -lAF "${path}"`);
+        // 构建完整的带目录切换的命令
+        const fullCommand = `cd "${currentDirectory}" && ls -lAF "${path}"`;
+        const lsOutput = await execShellCommand(fullCommand);
+
         const files = lsOutput.split('\n')
-            .slice(1) // 1行目（total行）をスキップ
-            .filter(line => line.trim() !== '' && !line.endsWith('/.') && !line.endsWith('/..')) // 空行と . .. を除外
+            .slice(1)
+            .filter(line => line.trim() !== '' && !line.endsWith('/.') && !line.endsWith('/..'))
             .map(line => {
                 const parts = line.split(/\s+/);
                 const permissions = parts[0];
-                const name = parts.slice(8).join(' '); // スペースを含むファイル名に対応
+                const name = parts.slice(8).join(' ');
                 const isDir = permissions.startsWith('d');
                 return { name, type: isDir ? 'directory' : 'file' };
             });
@@ -161,7 +163,6 @@ app.post('/download', (req, res) => {
         readStream.on('data', chunk => chunks.push(chunk));
         readStream.on('end', () => {
             const buffer = Buffer.concat(chunks);
-            // ファイル内容をBase64でエンコードして返す
             res.json({ success: true, fileContent: buffer.toString('base64') });
         });
         readStream.on('error', err => {
@@ -173,7 +174,7 @@ app.post('/download', (req, res) => {
 
 // [POST] /upload - 指定されたパスにファイルをアップロード（更新）するAPI
 app.post('/upload', (req, res) => {
-    const { path, content } = req.body; // contentはBase64エンコードされている想定
+    const { path, content } = req.body;
     if (!sshClient) {
         return res.status(400).json({ success: false, message: 'SSH接続がありません。' });
     }
@@ -187,7 +188,6 @@ app.post('/upload', (req, res) => {
             return res.status(500).json({ success: false, message: `SFTPセッションの開始に失敗しました: ${err.message}` });
         }
         
-        // Base64からBufferにデコード
         const buffer = Buffer.from(content, 'base64');
         const writeStream = sftp.createWriteStream(path);
 
@@ -201,7 +201,6 @@ app.post('/upload', (req, res) => {
             res.json({ success: true, message: 'ファイルが正常に更新されました。' });
         });
 
-        // Bufferを書き込んでストリームを閉じる
         writeStream.end(buffer);
     });
 });
@@ -212,14 +211,28 @@ app.post('/execute', async (req, res) => {
     if (!sshClient) {
         return res.status(400).json({ success: false, message: 'SSH接続がありません。' });
     }
-
-    try {
-        const output = await execCommand(sshClient, command);
-        res.json({ success: true, output });
-    } catch (err) {
-        console.error(`Error executing command "${command}":`, err.message);
-        // コマンドの実行に失敗しても、エラー情報をJSONで返す
-        res.status(200).json({ success: false, error: err.message, output: '' });
+    
+    // 特殊处理 cd 命令，更新服务器端的工作目录状态
+    if (command.trim().startsWith('cd ')) {
+        const path = command.trim().substring(3).trim();
+        try {
+            // 在新的子进程中执行 cd，并获取新的工作目录
+            const newDir = await execShellCommand(`cd "${currentDirectory}" && cd "${path}" && pwd`);
+            currentDirectory = newDir.trim();
+            res.json({ success: true, output: `Changed directory to: ${currentDirectory}` });
+        } catch (err) {
+            res.status(200).json({ success: false, error: err.message, output: '' });
+        }
+    } else {
+        try {
+            // 对于其他命令，在执行前切换到当前目录
+            const fullCommand = `cd "${currentDirectory}" && ${command}`;
+            const output = await execShellCommand(fullCommand);
+            res.json({ success: true, output });
+        } catch (err) {
+            console.error(`Error executing command "${command}":`, err.message);
+            res.status(200).json({ success: false, error: err.message, output: '' });
+        }
     }
 });
 
@@ -236,8 +249,16 @@ app.post('/delete-multiple', async (req, res) => {
     let allSuccess = true;
     for (const file of files) {
         try {
-            const rmCommand = `rm -f "${file}"`;
-            const rmOutput = await execCommand(sshClient, rmCommand);
+            const rmCommand = `cd "${currentDirectory}" && rm -f "${file}"`;
+            const rmOutput = await new Promise((resolve, reject) => {
+                sshClient.exec(rmCommand, (err, stream) => {
+                    if (err) return reject(err);
+                    let output = '';
+                    stream.on('data', (data) => output += data);
+                    stream.on('close', () => resolve(output));
+                    stream.stderr.on('data', (data) => reject(new Error(data.toString())));
+                });
+            });
             results.push({ file, success: true, message: rmOutput || 'File deleted successfully.' });
         } catch (err) {
             allSuccess = false;
@@ -269,7 +290,7 @@ app.post('/gemini', async (req, res) => {
 
     if (linesToEditInfo && linesToEditInfo.lines.length > 0) {
         systemInstruction = `あなたは優秀なAIコーディングアシスタントです。ユーザーは既存のコードの特定部分の編集を指示します。現在のコード全体と編集指示、注目すべき行番号を提示します。これらを考慮し、指示を反映した上で、修正後の完全なコード全体を返してください。あなたの解説や追加のテキスト、マークダウンフォーマット（例: \`\`\`）は一切不要です。必ずコード全体を返してください。`;
-        constructedPrompt = `ユーザーは、現在エディタにある以下のコード全体について、特に（${linesToEditInfo.lines.join(', ')}行目 付近）に対する編集を希望しています。\n\n編集指示は「${userPrompt}」です。\n\n現在のコード全体は次のとおりです:\n\`\`\`\n${currentFullCode}\n\`\`\`\n\nこの編集指示を考慮し、上記のコード全体を修正した最終的な完全なコードのみを返してください。`;
+        constructedPrompt = `ユーザーは、現在エディタにある以下のコード全体について、特に（${linesToEditInfo.lines.join(', ')}行目 付近）に対する編集を希望しています。\n\n編集指示は「${userPrompt}」です。\n\n現在のコード全体は次のとおりです:\n\`\`\`\n${currentFullCode}\`\`\`\n\nこの編集指示を考慮し、上記のコード全体を修正した最終的な完全なコードのみを返してください。`;
     } else {
         constructedPrompt = `以下の指示に基づいてコードを生成してください: 「${userPrompt}」\n生成されたコードそのものだけを返してください。`;
     }
@@ -310,7 +331,7 @@ app.post('/gemini', async (req, res) => {
 });
 
 // サーバーを起動
-app.listen(PORT, '0.0.0.0', () => { // '0.0.0.0' で外部からのアクセスを許可
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Backend SSH server running on http://0.0.0.0:${PORT}`);
     console.log('フロントエンドがこのアドレスとポートに接続するように設定してください。');
 });
