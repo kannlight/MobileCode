@@ -20,15 +20,15 @@ let sshConfig = null;
 // Gemini APIキーを保持する変数
 let GEMINI_API_KEY = null;
 
-// 設定ファイルからAPIキーを読み込む
-try {
-    const configData = fs.readFileSync('./config.json', 'utf8');
-    const config = JSON.parse(configData);
-    GEMINI_API_KEY = config.GEMINI_API_KEY;
-    console.log('Successfully loaded Gemini API Key from config.json');
-} catch (err) {
-    console.error('Error loading config.json:', err.message);
-    console.error('Please create a config.json file with your Gemini API key: { "GEMINI_API_KEY": "YOUR_API_KEY" }');
+// backend.js 修正後
+// 環境変数からGemini APIキーを読み込む（SecretManagerから取得する）
+GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+if (GEMINI_API_KEY) {
+    console.log('Successfully loaded Gemini API Key from environment variable.');
+} else {
+    console.error('Error: GEMINI_API_KEY environment variable is not set.');
+    console.error('Please configure the GEMINI_API_KEY secret in your deployment environment.');
 }
 
 /**
