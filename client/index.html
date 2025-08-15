@@ -13,9 +13,7 @@
         body {
             font-family: sans-serif;
             margin: 0;
-            height: 100vh;
-            width: 100vw;
-            overflow: hidden;
+            background-color: #1a202c; /* bg-gray-900 */
         }
         #root {
             height: 100%;
@@ -77,7 +75,7 @@
             <line x1="10" y1="9" x2="8" y2="9"></line>
           </svg>
         );
-        const EditFileIcon = ({ size = 24, className = "" }) => ( // 「編集」ボタン用の新しいアイコン
+        const EditFileIcon = ({ size = 24, className = "" }) => (
           <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             <path d="M12 20h9"></path>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
@@ -216,7 +214,6 @@
                 }
             }, [commandOutput]);
 
-            // ★追加★ selectedLinesの状態に合わせてallLinesSelectedを更新
             useEffect(() => {
                 if (code.split('\n').length > 0 && selectedLines.length === code.split('\n').length) {
                     setAllLinesSelected(true);
@@ -269,14 +266,14 @@
 
             const handleDisconnect = () => {
                 setIsRemote(false);
-                setShowEditorTab(false); // エディタタブを非表示に
+                setShowEditorTab(false);
                 setConnectionInfo({ ip: '', port: '22', username: '', password: '' });
                 setRemoteFiles([]);
                 setCurrentRemotePath('/');
                 setCode('');
                 setOriginalCode('');
                 setEditingFilePath(null);
-                setActiveTab('chat'); // ローカルモードのデフォルトはチャット
+                setActiveTab('chat');
                 setError(null);
             };
 
@@ -306,8 +303,8 @@
                         setCode(decodedContent);
                         setOriginalCode(decodedContent);
                         setEditingFilePath(filePath);
-                        setShowEditorTab(true); // エディタタブを表示
-                        setActiveTab('editor'); // エディタタブに切り替え
+                        setShowEditorTab(true);
+                        setActiveTab('editor');
                         setError(null);
                     } catch (e) {
                         console.error("Base64デコード失敗:", e);
@@ -358,7 +355,6 @@
                 }
             };
 
-            // Gemini APIとの通信をバックエンドに委譲
             const callGeminiApi = async (userPrompt, currentChatHistory, currentFullCode, linesToEditInfo) => {
               setIsGeminiLoading(true);
               setError(null);
@@ -414,14 +410,14 @@
             
             const handleApplyCode = (rawGeminiResponse, messageEditingContextSnapshot) => {
               setCode(rawGeminiResponse); 
-              setShowEditorTab(true); // エディタタブを表示
+              setShowEditorTab(true);
               if (messageEditingContextSnapshot) {
                   setChatMessages(prev => [...prev, {sender: 'system', text: `編集指示に基づき、コード全体が更新されました。エディタタブを確認してください。`}]);
               } else {
                   setChatMessages(prev => [...prev, {sender: 'system', text: '新しいコードがエディタに反映されました。'}]);
               }
               setEditingContext(null);
-              setActiveTab('editor'); // エディタタブに切り替え
+              setActiveTab('editor');
               setSelectedLines([]);
             };
 
@@ -443,7 +439,6 @@
               );
             };
 
-            // ★追加★ 全行選択・選択解除トグル関数
             const toggleAllLinesSelection = () => {
                 const allLineNumbers = code.split('\n').map((_, index) => index + 1);
                 if (allLinesSelected) {
@@ -456,8 +451,9 @@
             
             const handleAddCustomCommand = () => {
               if (newCustomCommandName.trim() && newCustomCommandValue.trim()) {
-                  setCustomCommands(prev => [...prev, { name: newCustomCommandName.trim(), command: newCustomCommandValue.trim() }]);
-                  localStorage.setItem('customSshCommands', JSON.stringify([...customCommands, { name: newCustomCommandName.trim(), command: newCustomCommandValue.trim() }]));
+                  const newCommands = [...customCommands, { name: newCustomCommandName.trim(), command: newCustomCommandValue.trim() }];
+                  setCustomCommands(newCommands);
+                  localStorage.setItem('customSshCommands', JSON.stringify(newCommands));
                   setNewCustomCommandName('');
                   setNewCustomCommandValue('');
               }
@@ -471,18 +467,14 @@
 
             const handleCopyToClipboard = () => {
                 if (!code) return;
-
                 navigator.clipboard.writeText(code)
-                    .then(() => {
-                        showNotification("クリップボードにコピーしました！");
-                    })
+                    .then(() => showNotification("クリップボードにコピーしました！"))
                     .catch(err => {
                         console.error('クリップボードへのコピーに失敗:', err);
                         showNotification("コピーに失敗しました。", true);
                     });
             };
             
-            // タブの定義
             const allTabs = [
                 { id: 'files', label: 'ファイル', icon: Folder, remoteOnly: true },
                 { id: 'chat', label: 'チャット', icon: MessageSquare },
@@ -490,16 +482,15 @@
                 { id: 'commands', label: 'コマンド', icon: Terminal, remoteOnly: true },
             ];
             
-            // 現在のモードに基づいて表示するタブを決定し、並び替える
             const visibleTabs = isRemote 
-                ? [allTabs[0], allTabs[1], allTabs[2], allTabs[3]] // Remote: ファイル, チャット, エディタ, コマンド
-                : [allTabs[1], allTabs[2]]; // Local: チャット, エディタ
+                ? [allTabs[0], allTabs[1], allTabs[2], allTabs[3]]
+                : [allTabs[1], allTabs[2]];
 
             const renderEditor = () => {
               const isModified = editingFilePath && code !== originalCode;
-
+              // [MODIFIED] h-full を flex-grow に変更し、footerにflex-shrink-0を追加
               return(
-                <div className="flex flex-col h-full bg-gray-900 text-white">
+                <div className="flex flex-col flex-grow bg-gray-900 text-white">
                     <div className="flex-grow p-4 overflow-auto bg-gray-800">
                         {code.split('\n').map((line, index) => {
                             const lineNumber = index + 1;
@@ -521,8 +512,7 @@
                             </div>
                         )}
                     </div>
-                    {/* ★修正★ フッター部分の変更 */}
-                    <footer className="p-3 bg-gray-900 border-t border-gray-700 flex justify-between items-center space-x-3">
+                    <footer className="p-3 bg-gray-900 border-t border-gray-700 flex justify-between items-center space-x-3 flex-shrink-0">
                         <button onClick={toggleAllLinesSelection} className="font-semibold py-2 px-4 rounded-lg shadow flex items-center transition-all bg-purple-600 hover:bg-purple-700 text-white">
                             {allLinesSelected ? '全選択解除' : '全て選択'}
                         </button>
@@ -551,8 +541,9 @@
               );
             }
             
+            // [MODIFIED] h-full を flex-grow に変更し、入力欄コンテナに flex-shrink-0 を追加
             const renderChat = () => (
-                <div className="flex flex-col h-full bg-gray-800 text-white">
+                <div className="flex flex-col flex-grow bg-gray-800 text-white">
                     <div className="flex-grow p-4 overflow-y-auto space-y-4">
                         {chatMessages.map((msg, index) => (
                           <div key={index} className={`flex items-start gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -575,7 +566,7 @@
                         {isGeminiLoading && <div className="flex justify-center p-4"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-400"></div><p className="ml-3">Geminiが考え中...</p></div>}
                         <div ref={chatEndRef} />
                     </div>
-                    <div className="p-4 bg-gray-900 border-t border-gray-700">
+                    <div className="p-4 bg-gray-900 border-t border-gray-700 flex-shrink-0">
                       {editingContext && <div className="text-yellow-400 text-sm mb-2 p-2 bg-yellow-900/50 rounded">編集モード: 第{editingContext.lines.join(', ')}行について指示してください。コード全体が更新されます。</div>}
                         <div className="flex items-center space-x-2">
                             <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && !isGeminiLoading && handleSendMessage()} placeholder="Geminiにメッセージを送信..." className="flex-grow p-3 bg-gray-700 text-white rounded-lg" disabled={isGeminiLoading} />
@@ -669,7 +660,7 @@
             );
 
             return (
-                <div className="h-screen w-screen font-sans overflow-hidden flex flex-col bg-gray-900 text-white">
+                <div className="min-h-screen w-screen font-sans flex flex-col bg-gray-900 text-white">
                     <header className="p-3 bg-gray-800 shadow-md flex items-center justify-between flex-shrink-0 border-b border-gray-700">
                         <h1 className="text-xl font-semibold flex items-center">
                            <HardDrive size={24} className="mr-3 text-purple-400" />
@@ -700,8 +691,9 @@
                             </button>
                         ))}
                     </div>
-
-                    <div className="flex-grow overflow-hidden bg-gray-800">
+                    
+                    {/* [MODIFIED] 主内容コンテナに flex と flex-col を追加 */}
+                    <div className="flex-grow flex flex-col overflow-hidden bg-gray-800">
                         {activeTab === 'editor' && showEditorTab && renderEditor()}
                         {activeTab === 'chat' && renderChat()}
                         {isRemote && activeTab === 'files' && renderFileManager()}
